@@ -65,19 +65,19 @@ func TestHandlerFuncStatusCode(t *testing.T) {
 		{
 			Name:     "OK",
 			Handler:  okHandler,
-			Option:   func(r *mux.Router) { r.ErrorHandlerFunc = errorHandler(500) },
+			Option:   func(r *mux.Router) { r.Wrapper = mux.NewDefaultWrapper(errorHandler(500)) },
 			Expected: http.StatusOK,
 		},
 		{
 			Name:     "ServerError",
 			Handler:  failedHandler,
-			Option:   func(r *mux.Router) { r.ErrorHandlerFunc = errorHandler(500) },
+			Option:   func(r *mux.Router) { r.Wrapper = mux.NewDefaultWrapper(errorHandler(500)) },
 			Expected: http.StatusInternalServerError,
 		},
 		{
 			Name:     "CustomError",
 			Handler:  failedHandler,
-			Option:   func(r *mux.Router) { r.ErrorHandlerFunc = errorHandler(400) },
+			Option:   func(r *mux.Router) { r.Wrapper = mux.NewDefaultWrapper(errorHandler(400)) },
 			Expected: http.StatusBadRequest,
 		},
 	}

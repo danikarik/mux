@@ -6,15 +6,20 @@ import (
 	gorillamux "github.com/gorilla/mux"
 )
 
-func defaultErrorHandler(err error, w http.ResponseWriter, r *http.Request) {
-	http.Error(w, err.Error(), http.StatusInternalServerError)
-}
-
 // NewRouter returns a new router instance.
 func NewRouter(opts ...func(*Router)) *Router {
+	return newRouter(gorillamux.NewRouter(), opts...)
+}
+
+// NewRouterWithMux returns a new router instance with input mux.
+func NewRouterWithMux(mux *gorillamux.Router, opts ...func(*Router)) *Router {
+	return newRouter(mux, opts...)
+}
+
+func newRouter(mux *gorillamux.Router, opts ...func(*Router)) *Router {
 	router := &Router{
-		mux:              gorillamux.NewRouter(),
-		ErrorHandlerFunc: defaultErrorHandler,
+		mux:     mux,
+		Wrapper: NewDefaultWrapper(basicErrorFunc),
 	}
 	for _, opt := range opts {
 		opt(router)
@@ -22,60 +27,25 @@ func NewRouter(opts ...func(*Router)) *Router {
 	return router.withCustomHandlers()
 }
 
-// ErrorHandlerFunc handles error returned by `Handler`.
-type ErrorHandlerFunc func(err error, w http.ResponseWriter, r *http.Request)
-
 // HandlerFunc wraps standard `http.HandlerFunc` with `error` return value.
 type HandlerFunc func(w http.ResponseWriter, r *http.Request) error
 
 // Router wraps `github.com/gorilla/mux` with custom `mux.Handler`.
 type Router struct {
 	mux                     *gorillamux.Router
-	ErrorHandlerFunc        ErrorHandlerFunc
+	Wrapper                 Wrapper
 	NotFoundHandler         HandlerFunc
 	MethodNotAllowedHandler HandlerFunc
 }
 
 func (r *Router) withCustomHandlers() *Router {
 	if r.NotFoundHandler != nil {
-		r.mux.NotFoundHandler = r.handlerFunc(r.NotFoundHandler)
+		r.mux.NotFoundHandler = r.Wrapper.HandlerFunc(r.NotFoundHandler)
 	}
 	if r.MethodNotAllowedHandler != nil {
-		r.mux.MethodNotAllowedHandler = r.handlerFunc(r.MethodNotAllowedHandler)
+		r.mux.MethodNotAllowedHandler = r.Wrapper.HandlerFunc(r.MethodNotAllowedHandler)
 	}
 	return r
-}
-
-func (r *Router) serveHandler(fn HandlerFunc) func(w http.ResponseWriter, req *http.Request) {
-	return func(w http.ResponseWriter, req *http.Request) {
-		if err := fn(w, req); err != nil {
-			r.ErrorHandlerFunc(err, w, req)
-		}
-	}
-}
-
-func (r *Router) handlerFunc(fn HandlerFunc) http.HandlerFunc {
-	return r.serveHandler(fn)
-}
-
-func (r *Router) serveMiddleware(mwf MiddlewareFunc) func(next http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			ctx, err := mwf(w, req)
-			if err != nil {
-				r.ErrorHandlerFunc(err, w, req)
-				return
-			}
-			if ctx != nil {
-				req = req.WithContext(ctx)
-			}
-			next.ServeHTTP(w, req)
-		})
-	}
-}
-
-func (r *Router) middlewareFunc(mwf MiddlewareFunc) func(next http.Handler) http.Handler {
-	return r.serveMiddleware(mwf)
 }
 
 // ServeHTTP dispatches the handler registered in the matched route.
@@ -84,8 +54,8 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 }
 
 // Get returns a route registered with the given name.
-func (r *Router) Get(name string) *gorillamux.Route {
-	return r.mux.Get(name)
+func (r *Router) Get(name string) *Route {
+	return NewRoute(r.mux.Get(name), routeWithWrapper(r.Wrapper))
 }
 
 // StrictSlash defines the trailing slash behavior for new routes. The initial
@@ -110,85 +80,85 @@ func (r *Router) UseEncodedPath() *Router {
 }
 
 // NewRoute registers an empty route.
-func (r *Router) NewRoute() *gorillamux.Route {
-	return r.mux.NewRoute()
+func (r *Router) NewRoute() *Route {
+	return NewRoute(r.mux.NewRoute(), routeWithWrapper(r.Wrapper))
 }
 
 // Name registers a new route with a name.
 // See Route.Name().
-func (r *Router) Name(name string) *gorillamux.Route {
+func (r *Router) Name(name string) *Route {
 	return r.NewRoute().Name(name)
 }
 
 // Handle registers a new route with a matcher for the URL path.
 // See Route.Path() and Route.Handler().
-func (r *Router) Handle(path string, h http.Handler) *gorillamux.Route {
-	return r.mux.Handle(path, h)
+func (r *Router) Handle(path string, h http.Handler) *Route {
+	return NewRoute(r.mux.Handle(path, h), routeWithWrapper(r.Wrapper))
 }
 
 // HandleFunc registers a new route with a matcher for the URL path.
 // See Route.Path() and Route.HandlerFunc().
-func (r *Router) HandleFunc(path string, h HandlerFunc) *gorillamux.Route {
-	return r.mux.HandleFunc(path, r.handlerFunc(h))
+func (r *Router) HandleFunc(path string, fn HandlerFunc) *Route {
+	return NewRoute(r.mux.HandleFunc(path, r.Wrapper.HandlerFunc(fn)), routeWithWrapper(r.Wrapper))
 }
 
 // HandleFuncBypass registers a new route with a matcher for the URL path.
 // See Route.Path() and Route.HandlerFunc().
-func (r *Router) HandleFuncBypass(path string, h http.HandlerFunc) *gorillamux.Route {
-	return r.mux.HandleFunc(path, h)
+func (r *Router) HandleFuncBypass(path string, fn http.HandlerFunc) *Route {
+	return NewRoute(r.mux.HandleFunc(path, fn), routeWithWrapper(r.Wrapper))
 }
 
 // Headers registers a new route with a matcher for request header values.
 // See Route.Headers().
-func (r *Router) Headers(pairs ...string) *gorillamux.Route {
+func (r *Router) Headers(pairs ...string) *Route {
 	return r.NewRoute().Headers(pairs...)
 }
 
 // Host registers a new route with a matcher for the URL host.
 // See Route.Host().
-func (r *Router) Host(tpl string) *gorillamux.Route {
+func (r *Router) Host(tpl string) *Route {
 	return r.NewRoute().Host(tpl)
 }
 
 // MatcherFunc registers a new route with a custom matcher function.
 // See Route.MatcherFunc().
-func (r *Router) MatcherFunc(f gorillamux.MatcherFunc) *gorillamux.Route {
+func (r *Router) MatcherFunc(f gorillamux.MatcherFunc) *Route {
 	return r.NewRoute().MatcherFunc(f)
 }
 
 // Methods registers a new route with a matcher for HTTP methods.
 // See Route.Methods().
-func (r *Router) Methods(methods ...string) *gorillamux.Route {
+func (r *Router) Methods(methods ...string) *Route {
 	return r.NewRoute().Methods(methods...)
 }
 
 // Path registers a new route with a matcher for the URL path.
 // See Route.Path().
-func (r *Router) Path(tpl string) *gorillamux.Route {
+func (r *Router) Path(tpl string) *Route {
 	return r.NewRoute().Path(tpl)
 }
 
 // PathPrefix registers a new route with a matcher for the URL path prefix.
 // See Route.PathPrefix().
-func (r *Router) PathPrefix(tpl string) *gorillamux.Route {
+func (r *Router) PathPrefix(tpl string) *Route {
 	return r.NewRoute().PathPrefix(tpl)
 }
 
 // Queries registers a new route with a matcher for URL query values.
 // See Route.Queries().
-func (r *Router) Queries(pairs ...string) *gorillamux.Route {
+func (r *Router) Queries(pairs ...string) *Route {
 	return r.NewRoute().Queries(pairs...)
 }
 
 // Schemes registers a new route with a matcher for URL schemes.
 // See Route.Schemes().
-func (r *Router) Schemes(schemes ...string) *gorillamux.Route {
+func (r *Router) Schemes(schemes ...string) *Route {
 	return r.NewRoute().Schemes(schemes...)
 }
 
 // BuildVarsFunc registers a new route with a custom function for modifying
 // route variables before building a URL.
-func (r *Router) BuildVarsFunc(f gorillamux.BuildVarsFunc) *gorillamux.Route {
+func (r *Router) BuildVarsFunc(f gorillamux.BuildVarsFunc) *Route {
 	return r.NewRoute().BuildVarsFunc(f)
 }
 
@@ -205,6 +175,6 @@ func Vars(r *http.Request) map[string]string {
 }
 
 // CurrentRoute returns the matched route for the current request, if any.
-func CurrentRoute(r *http.Request) *gorillamux.Route {
-	return gorillamux.CurrentRoute(r)
+func CurrentRoute(r *http.Request) *Route {
+	return NewRoute(gorillamux.CurrentRoute(r))
 }

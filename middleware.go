@@ -14,7 +14,7 @@ type MiddlewareFunc func(w http.ResponseWriter, r *http.Request) (context.Contex
 func (r *Router) Use(mwf ...MiddlewareFunc) {
 	middlewares := []gorillamux.MiddlewareFunc{}
 	for _, fn := range mwf {
-		middlewares = append(middlewares, r.middlewareFunc(fn))
+		middlewares = append(middlewares, r.Wrapper.MiddlewareFunc(fn))
 	}
 	r.mux.Use(middlewares...)
 }
