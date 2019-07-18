@@ -132,6 +132,12 @@ func (r *Router) HandleFunc(path string, h HandlerFunc) *gorillamux.Route {
 	return r.mux.HandleFunc(path, r.handlerFunc(h))
 }
 
+// HandleFuncBypass registers a new route with a matcher for the URL path.
+// See Route.Path() and Route.HandlerFunc().
+func (r *Router) HandleFuncBypass(path string, h http.HandlerFunc) *gorillamux.Route {
+	return r.mux.HandleFunc(path, h)
+}
+
 // Headers registers a new route with a matcher for request header values.
 // See Route.Headers().
 func (r *Router) Headers(pairs ...string) *gorillamux.Route {

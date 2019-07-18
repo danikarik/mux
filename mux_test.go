@@ -101,6 +101,47 @@ func TestHandlerFuncStatusCode(t *testing.T) {
 	}
 }
 
+func TestHandlerFuncStatusCodeBypass(t *testing.T) {
+	testCases := []struct {
+		Name     string
+		Handler  http.HandlerFunc
+		Expected int
+	}{
+		{
+			Name: "OK",
+			Handler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			},
+			Expected: http.StatusOK,
+		},
+		{
+			Name: "ServerError",
+			Handler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusInternalServerError)
+			},
+			Expected: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			mux := mux.NewRouter()
+			mux.HandleFuncBypass("/", tc.Handler)
+
+			r := httptest.NewRequest("GET", "/", nil)
+			w := httptest.NewRecorder()
+
+			mux.ServeHTTP(w, r)
+			resp := w.Result()
+
+			if resp.StatusCode != tc.Expected {
+				err := newStatusError(resp.StatusCode, tc.Expected)
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func TestHandlerStatusCode(t *testing.T) {
 	testCases := []struct {
 		Name     string
