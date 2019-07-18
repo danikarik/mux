@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/danikarik/mux"
@@ -39,7 +40,9 @@ func (e *statusError) Error() string {
 }
 
 func okHandler(w http.ResponseWriter, r *http.Request) error {
-	w.WriteHeader(http.StatusOK)
+	code := http.StatusOK
+	w.WriteHeader(code)
+	w.Write([]byte(http.StatusText(code)))
 	return nil
 }
 
@@ -60,6 +63,16 @@ func failedHandler(w http.ResponseWriter, r *http.Request) error {
 	return errors.New("internal error occured")
 }
 
+func custom404(w http.ResponseWriter, r *http.Request) error {
+	http.Error(w, http.StatusText(http.StatusNotFound), http.StatusBadRequest)
+	return nil
+}
+
+func custom405(w http.ResponseWriter, r *http.Request) error {
+	http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusBadRequest)
+	return nil
+}
+
 func middlewareContextFunc(id int) mux.Middleware {
 	return func(w http.ResponseWriter, r *http.Request) (context.Context, error) {
 		ctx := context.WithValue(r.Context(), userID, id)
@@ -69,37 +82,34 @@ func middlewareContextFunc(id int) mux.Middleware {
 
 func TestHandlerFuncStatusCode(t *testing.T) {
 	testCases := []struct {
-		Name         string
-		Handler      mux.Handler
-		ErrorHandler mux.ErrorHandler
-		Expected     int
+		Name     string
+		Handler  mux.Handler
+		Option   func(*mux.Router)
+		Expected int
 	}{
 		{
-			Name:         "OK",
-			Handler:      okHandler,
-			ErrorHandler: errorHandler(500),
-			Expected:     http.StatusOK,
+			Name:     "OK",
+			Handler:  okHandler,
+			Option:   func(r *mux.Router) { r.ErrorHandler = errorHandler(500) },
+			Expected: http.StatusOK,
 		},
 		{
-			Name:         "ServerError",
-			Handler:      failedHandler,
-			ErrorHandler: errorHandler(500),
-			Expected:     http.StatusInternalServerError,
+			Name:     "ServerError",
+			Handler:  failedHandler,
+			Option:   func(r *mux.Router) { r.ErrorHandler = errorHandler(500) },
+			Expected: http.StatusInternalServerError,
 		},
 		{
-			Name:         "CustomError",
-			Handler:      failedHandler,
-			ErrorHandler: errorHandler(400),
-			Expected:     http.StatusBadRequest,
+			Name:     "CustomError",
+			Handler:  failedHandler,
+			Option:   func(r *mux.Router) { r.ErrorHandler = errorHandler(400) },
+			Expected: http.StatusBadRequest,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
-			opt := func(r *mux.Router) {
-				r.ErrorHandler = tc.ErrorHandler
-			}
-			mux := mux.NewRouter(opt)
+			mux := mux.NewRouter(tc.Option)
 			mux.HandleFunc("/", tc.Handler)
 
 			r := httptest.NewRequest("GET", "/", nil)
@@ -232,4 +242,69 @@ func TestMiddlewareContext(t *testing.T) {
 		})
 	}
 
+}
+
+func TestCustomHandlers(t *testing.T) {
+	testCases := []struct {
+		Name     string
+		Path     string
+		Method   string
+		Option   func(*mux.Router)
+		Code     int
+		Expected string
+	}{
+		{
+			Name:     "200",
+			Path:     "/",
+			Method:   "GET",
+			Option:   func(r *mux.Router) {},
+			Code:     http.StatusOK,
+			Expected: http.StatusText(http.StatusOK),
+		},
+		{
+			Name:     "404",
+			Path:     "/someroute",
+			Method:   "GET",
+			Option:   func(r *mux.Router) { r.NotFoundHandler = custom404 },
+			Code:     http.StatusBadRequest,
+			Expected: http.StatusText(http.StatusNotFound),
+		},
+		{
+			Name:     "405",
+			Path:     "/",
+			Method:   "POST",
+			Option:   func(r *mux.Router) { r.MethodNotAllowedHandler = custom405 },
+			Code:     http.StatusBadRequest,
+			Expected: http.StatusText(http.StatusMethodNotAllowed),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			mux := mux.NewRouter(tc.Option)
+			mux.HandleFunc("/", okHandler).Methods("GET")
+
+			r := httptest.NewRequest(tc.Method, tc.Path, nil)
+			w := httptest.NewRecorder()
+
+			mux.ServeHTTP(w, r)
+			resp := w.Result()
+
+			if resp.StatusCode != tc.Code {
+				err := newStatusError(resp.StatusCode, tc.Code)
+				t.Fatal(err)
+			}
+
+			data, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+
+			if strings.Trim(string(data), "\n") != tc.Expected {
+				err := fmt.Errorf("failed: got %s, expected %s", string(data), tc.Expected)
+				t.Fatal(err)
+			}
+		})
+	}
 }

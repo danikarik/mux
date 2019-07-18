@@ -20,7 +20,7 @@ func NewRouter(opts ...func(*Router)) *Router {
 	for _, opt := range opts {
 		opt(router)
 	}
-	return router
+	return router.withCustomHandlers()
 }
 
 // ErrorHandler handles error returned by `Handler`.
@@ -34,8 +34,20 @@ type Middleware func(w http.ResponseWriter, r *http.Request) (context.Context, e
 
 // Router wraps `github.com/gorilla/mux` with custom `mux.Handler`.
 type Router struct {
-	mux          *gorillamux.Router
-	ErrorHandler ErrorHandler
+	mux                     *gorillamux.Router
+	ErrorHandler            ErrorHandler
+	NotFoundHandler         Handler
+	MethodNotAllowedHandler Handler
+}
+
+func (r *Router) withCustomHandlers() *Router {
+	if r.NotFoundHandler != nil {
+		r.mux.NotFoundHandler = r.handlerFunc(r.NotFoundHandler)
+	}
+	if r.MethodNotAllowedHandler != nil {
+		r.mux.MethodNotAllowedHandler = r.handlerFunc(r.MethodNotAllowedHandler)
+	}
+	return r
 }
 
 func (r *Router) serveHandler(fn Handler) func(w http.ResponseWriter, req *http.Request) {
@@ -76,13 +88,13 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 }
 
 // Handle registers a new route with a matcher for the URL path.
-func (r *Router) Handle(path string, h http.Handler) {
-	r.mux.Handle(path, h)
+func (r *Router) Handle(path string, h http.Handler) *gorillamux.Route {
+	return r.mux.Handle(path, h)
 }
 
 // HandleFunc registers a new route with a matcher for the URL path.
-func (r *Router) HandleFunc(path string, h Handler) {
-	r.mux.HandleFunc(path, r.handlerFunc(h))
+func (r *Router) HandleFunc(path string, h Handler) *gorillamux.Route {
+	return r.mux.HandleFunc(path, r.handlerFunc(h))
 }
 
 // Use appends a MiddlewareFunc to the chain.
