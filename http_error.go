@@ -35,6 +35,14 @@ func NewHTTPError(code int, message string, opts ...func(e *HTTPError)) *HTTPErr
 	return err
 }
 
+// Error implements error interface.
+func (e *HTTPError) Error() string {
+	if e.InternalMessage != "" {
+		return e.InternalMessage
+	}
+	return e.Message
+}
+
 // WithInternalMessage updates `InternalMessage` field.
 func (e *HTTPError) WithInternalMessage(message string) *HTTPError {
 	e.InternalMessage = message
