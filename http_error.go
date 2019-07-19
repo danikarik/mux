@@ -70,15 +70,13 @@ func (e *HTTPError) WithShowError(flag bool) *HTTPError {
 // MarshalJSON implemenets `json.Marshal`.
 func (e *HTTPError) MarshalJSON() ([]byte, error) {
 	data := &httpError{
-		Code:    e.Code,
-		Message: e.Message,
-		ErrorID: e.ErrorID,
+		Code:            e.Code,
+		Message:         e.Message,
+		ErrorID:         e.ErrorID,
+		InternalMessage: e.InternalMessage,
 	}
-	if e.ShowError {
-		if e.InternalError != nil {
-			data.InternalError = e.InternalError.Error()
-		}
-		data.InternalMessage = e.InternalMessage
+	if e.ShowError && e.InternalError != nil {
+		data.InternalError = e.InternalError.Error()
 	}
 	return json.Marshal(data)
 }
@@ -93,10 +91,10 @@ func (e *HTTPError) UnmarshalJSON(b []byte) error {
 	e.Code = data.Code
 	e.Message = data.Message
 	e.ErrorID = data.ErrorID
+	e.InternalMessage = data.InternalMessage
 	if data.InternalError != "" {
 		e.ShowError = true
 		e.InternalError = errors.New(data.InternalError)
 	}
-	e.InternalMessage = data.InternalMessage
 	return nil
 }
