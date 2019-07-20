@@ -21,7 +21,7 @@ func userHandler(w http.ResponseWriter, r *http.Request) error {
     if err != nil {
         return err
     }
-    return sendJSON(w, user)
+    return sendJSON(w, http.StatusOK, user)
 }
 
 r := mux.NewRouter()
@@ -61,12 +61,12 @@ With custom error handler:
 ```go
 func withCustomErrorHandler(r *mux.Router) {
     r.ErrorHandlerFunc = func(err error, w http.ResponseWriter, r *http.Request) {
-        switch err.(type) {
+        switch e := err.(type) {
         case *HTTPError:
-            sendJSON(w, err)
+            sendJSON(w, e.Code, e)
             break
         case *database.Error:
-            http.Error(w, err.Message, http.StatusInternalServerError)
+            http.Error(w, e.Message, http.StatusInternalServerError)
         default:
             http.Error(w, err.Error(), http.StatusInternalServerError)
             break
