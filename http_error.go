@@ -18,8 +18,8 @@ type HTTPError struct {
 type httpError struct {
 	Code            int    `json:"code"`
 	Message         string `json:"message"`
-	InternalError   string `json:"internal_error,omitempty"`
-	InternalMessage string `json:"internal_message,omitempty"`
+	InternalError   string `json:"internalError,omitempty"`
+	InternalMessage string `json:"internalMessage,omitempty"`
 	ErrorID         string `json:"id,omitempty"`
 }
 

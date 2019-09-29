@@ -33,6 +33,6 @@ func ExampleHTTPError() {
 
 	// Output:
 	// {"code":400,"message":"Bad Request"}
-	// {"code":500,"message":"Server Error","internal_error":"Unexpected Error","internal_message":"Failed","id":"123"}
-	// {"code":401,"message":"Unauthorized","internal_message":"Failed","id":"456"}
+	// {"code":500,"message":"Server Error","internalError":"Unexpected Error","internalMessage":"Failed","id":"123"}
+	// {"code":401,"message":"Unauthorized","internalMessage":"Failed","id":"456"}
 }
